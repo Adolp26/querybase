@@ -1,0 +1,25 @@
+server:
+  port: "8080"
+  mode: debug  # debug, release, test
+
+redis:
+  host: localhost
+  port: "6379"
+  password: ""  # Use variável de ambiente
+  db: 0
+  ttl: 300
+
+oracle:
+  host: ${ORACLE_HOST}          # Use variável de ambiente!
+  port: "1521"
+  service: ${ORACLE_SERVICE}    # Use variável de ambiente!
+  username: ${ORACLE_USERNAME}  # Use variável de ambiente!
+  password: ${ORACLE_PASSWORD}  # Use variável de ambiente!
+
+postgres:
+  host: ${POSTGRES_HOST}
+  port: "5432"
+  database: ${POSTGRES_DB}
+  username: ${POSTGRES_USER}
+  password: ${POSTGRES_PASSWORD}
+  sslmode: disable
