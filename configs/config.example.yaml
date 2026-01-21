@@ -1,20 +1,20 @@
 server:
   port: "8080"
-  mode: debug  # debug, release, test
+  mode: debug
 
 redis:
   host: localhost
   port: "6379"
-  password: ""  # Use variável de ambiente
+  password: ""
   db: 0
   ttl: 300
 
 oracle:
-  host: ${ORACLE_HOST}          # Use variável de ambiente!
+  host: ${ORACLE_HOST}
   port: "1521"
-  service: ${ORACLE_SERVICE}    # Use variável de ambiente!
-  username: ${ORACLE_USERNAME}  # Use variável de ambiente!
-  password: ${ORACLE_PASSWORD}  # Use variável de ambiente!
+  service: ${ORACLE_SERVICE}
+  username: ${ORACLE_USERNAME}
+  password: ${ORACLE_PASSWORD}
 
 postgres:
   host: ${POSTGRES_HOST}
@@ -23,3 +23,14 @@ postgres:
   username: ${POSTGRES_USER}
   password: ${POSTGRES_PASSWORD}
   sslmode: disable
+
+security:
+  enable_auth: false
+  api_keys:
+    - ${API_KEY_1}
+    - ${API_KEY_2}
+  enable_rate_limit: true
+  requests_per_minute: 60
+  burst_size: 10
+  allowed_origins:
+    - "*"

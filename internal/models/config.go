@@ -5,6 +5,16 @@ type Config struct {
 	Redis    RedisConfig    `mapstructure:"redis"`
 	Oracle   OracleConfig   `mapstructure:"oracle"`
 	Postgres PostgresConfig `mapstructure:"postgres"`
+	Security SecurityConfig `mapstructure:"security"`
+}
+
+type SecurityConfig struct {
+	APIKeys           []string `mapstructure:"api_keys"`
+	EnableAuth        bool     `mapstructure:"enable_auth"`
+	EnableRateLimit   bool     `mapstructure:"enable_rate_limit"`
+	RequestsPerMinute int      `mapstructure:"requests_per_minute"`
+	BurstSize         int      `mapstructure:"burst_size"`
+	AllowedOrigins    []string `mapstructure:"allowed_origins"`
 }
 
 type ServerConfig struct {
