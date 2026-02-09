@@ -14,45 +14,63 @@ import (
 )
 
 func main() {
-	fmt.Println("📖 Carregando configurações...")
+	fmt.Println("[QueryBase] Iniciando API...")
+	fmt.Println("")
+
+	// =========================================================================
+	// CONFIGURACOES
+	// =========================================================================
+	fmt.Println("[Config] Carregando configuracoes...")
 	cfg, err := config.LoadConfig("configs/config.yaml")
 	if err != nil {
-		log.Fatalf("❌ Erro ao carregar config: %v", err)
+		log.Fatalf("[Config] Erro ao carregar config: %v", err)
 	}
-	fmt.Println("✅ Configurações carregadas")
+	fmt.Println("[Config] OK")
 
-	fmt.Println("🔌 Conectando no Redis...")
+	// =========================================================================
+	// INFRAESTRUTURA
+	// =========================================================================
+
+	// Redis (cache de queries)
+	fmt.Println("[Redis] Conectando...")
 	redisClient, err := database.NewRedisClient(cfg.Redis)
 	if err != nil {
-		log.Fatalf("❌ Erro ao conectar no Redis: %v", err)
+		log.Fatalf("[Redis] Erro ao conectar: %v", err)
 	}
 	defer redisClient.Close()
-	fmt.Println("✅ Redis conectado")
+	fmt.Println("[Redis] OK")
 
-	fmt.Println("🔌 Conectando no Oracle...")
-	oracleClient, err := database.NewOracleDataSource(cfg.Oracle)
-	if err != nil {
-		log.Fatalf("❌ Erro ao conectar no Oracle: %v", err)
-	}
-	defer oracleClient.Close()
-	fmt.Println("✅ Oracle conectado")
-
-	fmt.Println("🔌 Conectando no PostgreSQL...")
+	// PostgreSQL (metadados - datasources e queries cadastrados via UI)
+	fmt.Println("[PostgreSQL] Conectando ao banco de metadados...")
 	postgresClient, err := database.NewPostgresClient(cfg.Postgres)
 	if err != nil {
-		log.Fatalf("❌ Erro ao conectar no PostgreSQL: %v", err)
+		log.Fatalf("[PostgreSQL] Erro ao conectar: %v", err)
 	}
 	defer postgresClient.Close()
-	fmt.Println("✅ PostgreSQL conectado")
+	fmt.Println("[PostgreSQL] OK")
 
+	// ConnectionManager (conexoes dinamicas - Oracle, MySQL, PostgreSQL de producao)
+	fmt.Println("[ConnectionManager] Inicializando...")
+	connManager := database.NewConnectionManager()
+	defer connManager.CloseAll()
+	fmt.Println("[ConnectionManager] OK")
+
+	// =========================================================================
+	// SERVICES E REPOSITORIES
+	// =========================================================================
 	cacheService := services.NewCacheService(redisClient)
-	queryService := services.NewQueryService(oracleClient, cacheService)
 	queryRepo := repository.NewQueryRepository(postgresClient.GetDB())
+	datasourceRepo := repository.NewDatasourceRepository(postgresClient.GetDB())
 
-	testHandler := handlers.NewTestHandler(cacheService)
-	employeeHandler := handlers.NewEmployeeHandler(queryService)
-	dynamicHandler := handlers.NewDynamicQueryHandler(queryRepo, queryService, cacheService)
+	// =========================================================================
+	// HANDLERS
+	// =========================================================================
+	connectionHandler := handlers.NewConnectionHandler(connManager)
+	dynamicHandler := handlers.NewDynamicQueryHandler(queryRepo, datasourceRepo, connManager, cacheService)
 
+	// =========================================================================
+	// ROUTER
+	// =========================================================================
 	if cfg.Server.Mode == "release" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -61,15 +79,18 @@ func main() {
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
 
+	// CORS
 	corsConfig := middleware.NewCORSConfig()
 	if len(cfg.Security.AllowedOrigins) > 0 {
 		corsConfig.AllowOrigins = cfg.Security.AllowedOrigins
 	}
 	router.Use(middleware.CORS(corsConfig))
 
+	// Security headers
 	router.Use(middleware.SecurityHeaders())
 	router.Use(middleware.InputSanitizer())
 
+	// Rate limiting
 	rateLimitConfig := middleware.NewRateLimitConfig()
 	rateLimitConfig.Enabled = cfg.Security.EnableRateLimit
 	if cfg.Security.RequestsPerMinute > 0 {
@@ -80,6 +101,7 @@ func main() {
 	}
 	router.Use(middleware.RateLimit(rateLimitConfig))
 
+	// API Key auth
 	authConfig := middleware.NewAuthConfig()
 	authConfig.Enabled = cfg.Security.EnableAuth
 	for _, key := range cfg.Security.APIKeys {
@@ -89,30 +111,39 @@ func main() {
 	}
 	router.Use(middleware.APIKeyAuth(authConfig))
 
+	// =========================================================================
+	// ROTAS
+	// =========================================================================
+
+	// Health check
 	router.GET("/health", handlers.HealthCheck)
 
-	router.GET("/api/test", testHandler.GetTestData)
-	router.GET("/api/employees", employeeHandler.GetAll)
-	router.GET("/api/employees/department/:department", employeeHandler.GetByDepartment)
+	// Testar conexao com datasource (chamado pelo Laravel)
+	router.POST("/api/test-connection", connectionHandler.TestConnection)
 
+	// Listar queries disponiveis
 	router.GET("/api/queries", dynamicHandler.ListQueries)
+
+	// Executar query por slug
 	router.GET("/api/query/:slug", dynamicHandler.Execute)
 
+	// =========================================================================
+	// INICIAR SERVIDOR
+	// =========================================================================
 	addr := fmt.Sprintf(":%s", cfg.Server.Port)
 	fmt.Println("")
-	fmt.Printf("🚀 QueryBase API rodando em http://localhost%s\n", addr)
+	fmt.Println("==========================================================")
+	fmt.Printf("  QueryBase API rodando em http://localhost%s\n", addr)
+	fmt.Println("==========================================================")
 	fmt.Println("")
-	fmt.Println("🔒 Segurança:")
-	fmt.Printf("   Auth:       %v\n", cfg.Security.EnableAuth)
-	fmt.Printf("   Rate Limit: %v (%d req/min)\n", cfg.Security.EnableRateLimit, cfg.Security.RequestsPerMinute)
-	fmt.Println("")
-	fmt.Println("📚 Endpoints:")
-	fmt.Println("   GET /health              - Health check")
-	fmt.Println("   GET /api/queries         - Listar queries")
-	fmt.Println("   GET /api/query/:slug     - Executar query")
+	fmt.Println("Endpoints:")
+	fmt.Println("  GET  /health              - Health check")
+	fmt.Println("  POST /api/test-connection - Testar conexao com datasource")
+	fmt.Println("  GET  /api/queries         - Listar queries disponiveis")
+	fmt.Println("  GET  /api/query/:slug     - Executar query por slug")
 	fmt.Println("")
 
 	if err := router.Run(addr); err != nil {
-		log.Fatalf("❌ Erro ao iniciar servidor: %v", err)
+		log.Fatalf("[Server] Erro ao iniciar: %v", err)
 	}
 }
