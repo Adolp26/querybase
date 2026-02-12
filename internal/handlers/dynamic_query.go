@@ -83,13 +83,13 @@ func (h *DynamicQueryHandler) Execute(c *gin.Context) {
 		return
 	}
 
-	cacheKey := h.buildCacheKey(slug, params, query.Parameters)
+	cacheKey := h.buildCacheKey(slug, c, query.Parameters)
 	args := h.buildQueryArgs(params, query.Parameters)
 
 	queryCtx, cancel := context.WithTimeout(ctx, time.Duration(query.TimeoutSeconds)*time.Second)
 	defer cancel()
 
-	results, cacheHit, err := h.executeWithCache(queryCtx, cacheKey, query, datasource, args)
+	results, cacheHit, err := h.executeWithCache(queryCtx, cacheKey, query.CacheTTL, query, datasource, args)
 	duration := time.Since(startTime)
 
 	go h.logExecution(query, params, duration, cacheHit, results, err, c)
@@ -123,6 +123,7 @@ func (h *DynamicQueryHandler) Execute(c *gin.Context) {
 func (h *DynamicQueryHandler) executeWithCache(
 	ctx context.Context,
 	cacheKey string,
+	cacheTTL int,
 	query *models.Query,
 	datasource *database.DatasourceConfig,
 	args []interface{},
@@ -130,7 +131,7 @@ func (h *DynamicQueryHandler) executeWithCache(
 	var cacheHit bool = true
 	var results []map[string]interface{}
 
-	data, err := h.cacheService.GetOrSet(ctx, cacheKey, func() (interface{}, error) {
+	data, err := h.cacheService.GetOrSet(ctx, cacheKey, cacheTTL, func() (interface{}, error) {
 		cacheHit = false
 		fmt.Printf("[Query] Executando '%s' no datasource '%s' (%s)...\n",
 			query.Slug, datasource.Slug, datasource.Driver)
@@ -213,15 +214,17 @@ func (h *DynamicQueryHandler) convertParamType(value string, paramType string) (
 
 func (h *DynamicQueryHandler) buildCacheKey(
 	slug string,
-	params map[string]interface{},
+	c *gin.Context,
 	definitions []models.QueryParameter,
 ) string {
 	key := fmt.Sprintf("query:%s", slug)
 
 	for _, def := range definitions {
-		if val, ok := params[def.Name]; ok {
-			key += fmt.Sprintf(":%s=%v", def.Name, val)
+		rawValue := c.Query(def.Name)
+		if rawValue == "" && def.DefaultValue != nil {
+			rawValue = *def.DefaultValue
 		}
+		key += fmt.Sprintf(":%s=%s", def.Name, rawValue)
 	}
 
 	return key
