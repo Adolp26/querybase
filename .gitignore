@@ -18,6 +18,7 @@ go.work
 *.swo
 
 # Configs locais
+configs/config.yaml
 configs/local.yaml
 .env
 
