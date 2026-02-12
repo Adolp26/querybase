@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/adolp26/querybase/internal/crypto"
 	"github.com/adolp26/querybase/internal/database"
 	"github.com/adolp26/querybase/internal/handlers"
 	"github.com/adolp26/querybase/internal/middleware"
@@ -26,6 +27,14 @@ func main() {
 		log.Fatalf("[Config] Erro ao carregar config: %v", err)
 	}
 	fmt.Println("[Config] OK")
+
+	// Criptografia (descriptografar senhas de datasources)
+	fmt.Println("[Crypto] Inicializando...")
+	if err := crypto.Init(); err != nil {
+		fmt.Printf("[Crypto] Aviso: %v (senhas nao serao descriptografadas)\n", err)
+	} else {
+		fmt.Println("[Crypto] OK")
+	}
 
 	// =========================================================================
 	// INFRAESTRUTURA
