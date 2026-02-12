@@ -21,6 +21,7 @@ func NewCacheService(redis *database.RedisClient) *CacheService {
 func (s *CacheService) GetOrSet(
 	ctx context.Context,
 	key string,
+	ttlSeconds int,
 	fetchFunc func() (interface{}, error),
 ) (interface{}, error) {
 
@@ -30,7 +31,7 @@ func (s *CacheService) GetOrSet(
 		if err := json.Unmarshal([]byte(cached), &result); err != nil {
 			return nil, fmt.Errorf("erro ao decodificar cache: %w", err)
 		}
-		fmt.Printf("✅ Cache HIT: %s\n", key)
+		fmt.Printf("Cache HIT: %s\n", key)
 		return result, nil
 	}
 
@@ -42,12 +43,12 @@ func (s *CacheService) GetOrSet(
 
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		fmt.Printf("⚠️  Erro ao serializar cache: %v\n", err)
+		fmt.Printf("Erro ao serializar cache: %v\n", err)
 		return data, nil
 	}
 
-	if err := s.redis.Set(ctx, key, string(jsonData)); err != nil {
-		fmt.Printf("⚠️  Erro ao salvar cache: %v\n", err)
+	if err := s.redis.Set(ctx, key, string(jsonData), ttlSeconds); err != nil {
+		fmt.Printf("Erro ao salvar cache: %v\n", err)
 	}
 
 	return data, nil
