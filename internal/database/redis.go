@@ -46,8 +46,11 @@ func (r *RedisClient) Get(ctx context.Context, key string) (string, error) {
 	return val, nil
 }
 
-func (r *RedisClient) Set(ctx context.Context, key string, value string) error {
+func (r *RedisClient) Set(ctx context.Context, key string, value string, ttlSeconds ...int) error {
 	ttl := time.Duration(r.Config.TTL) * time.Second
+	if len(ttlSeconds) > 0 && ttlSeconds[0] > 0 {
+		ttl = time.Duration(ttlSeconds[0]) * time.Second
+	}
 
 	err := r.Client.Set(ctx, key, value, ttl).Err()
 	if err != nil {
