@@ -13,7 +13,10 @@ func SecurityHeaders() gin.HandlerFunc {
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-		c.Header("Cache-Control", "no-store, no-cache, must-revalidate")
+
+		if !strings.HasPrefix(c.Request.URL.Path, "/api/query/") {
+			c.Header("Cache-Control", "no-store, no-cache, must-revalidate")
+		}
 
 		c.Next()
 	}
