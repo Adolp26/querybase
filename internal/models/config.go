@@ -29,14 +29,6 @@ type RedisConfig struct {
 	TTL      int    `mapstructure:"ttl"`
 }
 
-type OracleConfig struct {
-	Host     string `mapstructure:"host"`
-	Port     string `mapstructure:"port"`
-	Service  string `mapstructure:"service"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
-}
-
 type PostgresConfig struct {
 	Host     string `mapstructure:"host"`
 	Port     string `mapstructure:"port"`
