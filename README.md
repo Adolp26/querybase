@@ -1,68 +1,67 @@
-# QueryBase
+# QueryBase API
 
-API Gateway para analytics empresariais. Transforma queries SQL cadastradas em endpoints REST com cache inteligente.
+API em Go que transforma queries SQL cadastradas em endpoints REST com cache Redis e suporte a multiplos bancos de dados.
 
 ## Arquitetura
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│    sistemas     │────▶│   API Golang    │────▶│     Oracle     │
-│    clientes     │     │   (porta 8080)  │     │   (Produção)    │
+│    Sistemas     │────▶│    API (Go)     │────▶│  Oracle / MySQL │
+│    Clientes     │     │   porta 8080    │     │   PostgreSQL    │
 └─────────────────┘     └────────┬────────┘     └─────────────────┘
-                           │
-              ┌────────────┼────────────┐
-              ▼            ▼            ▼
-        ┌──────────┐ ┌──────────┐ ┌──────────┐
-        │  Redis   │ │ Postgres │ │  Laravel │
-        │ (Cache)  │ │(Metadata)│ │  (Admin) │
-        └──────────┘ └──────────┘ └──────────┘
+                                 │
+                ┌────────────────┼────────────────┐
+                ▼                ▼                ▼
+          ┌──────────┐    ┌──────────┐    ┌──────────────┐
+          │  Redis   │    │ Postgres │    │ QueryBase Web│
+          │ (Cache)  │    │(Metadata)│    │   (Laravel)  │
+          └──────────┘    └──────────┘    └──────────────┘
 ```
 
 ## Stack
 
-- **API**: Go 1.21+ com Gin
-- **Cache**: Redis 7
-- **Metadados**: PostgreSQL 16
-- **Dados**: Oracle (produção)
-- **Admin** (futuro): Laravel 10+
+- **Go 1.21+** com Gin
+- **Redis** para cache de resultados
+- **PostgreSQL** para metadados (queries, datasources, logs)
+- **Datasources**: Oracle, PostgreSQL e MySQL
+- **Criptografia**: AES-256-GCM para senhas de datasources
 
-## Quick Start
+## Como rodar
 
 ```bash
-# 1. Subir infraestrutura
-cd docker
-docker-compose up -d
+# Copiar e editar configuracoes
+cp configs/config.example.yaml configs/config.yaml
 
-# 2. Configurar (edite se necessário)
-cp configs/config.yaml configs/config.local.yaml
+# Definir chave de criptografia (mesma usada no Laravel)
+export QUERYBASE_ENCRYPTION_KEY="sua-chave-base64-de-32-bytes"
 
-# 3. Rodar API
+# Rodar
 go run ./cmd/api/main.go
 ```
 
 ## Endpoints
 
-| Método | Endpoint | Descrição |
+| Metodo | Endpoint | Descricao |
 |--------|----------|-----------|
 | GET | `/health` | Health check |
-| GET | `/api/queries` | Lista queries disponíveis |
-| GET | `/api/query/:slug` | Executa query dinâmica |
-| GET | `/api/query/:slug?param=valor` | Executa com parâmetros |
+| POST | `/api/test-connection` | Testa conexao com datasource |
+| GET | `/api/queries` | Lista queries disponiveis |
+| GET | `/api/query/:slug` | Executa query por slug |
 
-## Exemplos
+## Exemplo de uso
 
 ```bash
-# Listar queries disponíveis
+# Listar queries
 curl http://localhost:8080/api/queries
 
-# Executar query sem parâmetros
-curl http://localhost:8080/api/query/employees-all
+# Executar query sem parametros
+curl http://localhost:8080/api/query/vendas-total
 
-# Executar query com parâmetros
-curl "http://localhost:8080/api/query/employees-by-department?department=10"
+# Executar query com parametros
+curl "http://localhost:8080/api/query/vendas-por-periodo?data_inicio=2024-01-01&data_fim=2024-12-31"
 ```
 
-## Resposta
+### Resposta
 
 ```json
 {
@@ -71,189 +70,87 @@ curl "http://localhost:8080/api/query/employees-by-department?department=10"
   ],
   "meta": {
     "slug": "employees-all",
-    "name": "Listar Todos os Funcionários",
+    "name": "Listar Funcionarios",
+    "datasource": "oracle-producao",
+    "driver": "oracle",
     "count": 100,
     "cache_hit": true,
-    "duration": "2.5ms"
+    "duration": "2.5ms",
+    "parameters": {}
   }
 }
 ```
 
-## Estrutura do Projeto
+## Estrutura do projeto
 
 ```
-querybase/
-├── cmd/api/main.go           # Entrada da aplicação
-├── configs/config.example.yaml  # Configurações exemplo
-├── docker/
-│   ├── docker-compose.yml    # Redis + PostgreSQL
-│   └── init-scripts/         # Schema inicial
+querybase-api/
+├── cmd/api/main.go              # Entrada da aplicacao
+├── configs/
+│   ├── config.example.yaml      # Configuracoes exemplo
+│   └── config.yaml              # Configuracoes locais (gitignore)
 ├── internal/
-│   ├── database/             # Conexões (Oracle, Redis, Postgres)
-│   ├── handlers/             # HTTP handlers
-│   ├── middleware/           # Auth, CORS, Rate Limit, Security
-│   ├── models/               # Structs de dados
-│   ├── repository/           # Acesso ao PostgreSQL
-│   └── services/             # Lógica de negócio
-└── pkg/config/               # Loader de configuração
-```
-
-## Banco de Dados
-
-### PostgreSQL (Metadados)
-
-| Tabela | Descrição |
-|--------|-----------|
-| `datasources` | Fontes de dados (Oracle, MySQL, etc) |
-| `queries` | Queries SQL cadastradas |
-| `query_parameters` | Parâmetros das queries |
-| `query_executions` | Log de execuções |
-
-### Cadastrar Nova Query
-
-```sql
-INSERT INTO queries (slug, name, description, sql_query, cache_ttl)
-VALUES (
-  'vendas-por-periodo',
-  'Vendas por Período',
-  'Total de vendas em um período',
-  'SELECT * FROM vendas WHERE data BETWEEN :1 AND :2',
-  600
-);
-
-INSERT INTO query_parameters (query_id, name, param_type, is_required, position)
-SELECT id, 'data_inicio', 'date', true, 1 FROM queries WHERE slug = 'vendas-por-periodo';
-
-INSERT INTO query_parameters (query_id, name, param_type, is_required, position)
-SELECT id, 'data_fim', 'date', true, 2 FROM queries WHERE slug = 'vendas-por-periodo';
-```
-
-Uso:
-```bash
-curl "http://localhost:8080/api/query/vendas-por-periodo?data_inicio=2024-01-01&data_fim=2024-12-31"
-```
-
-## Configuração
-
-```yaml
-server:
-  port: "8080"
-  mode: debug  # debug ou release
-
-redis:
-  host: localhost
-  port: "6379"
-  ttl: 300  # segundos
-
-oracle:
-  host: localhost
-  port: "1521"
-  service: XEPDB1
-  username: querybase
-  password: querybase123
-
-postgres:
-  host: localhost
-  port: "5432"
-  database: querybase_metadata
-  username: querybase
-  password: querybase123
-  sslmode: disable
+│   ├── crypto/                  # Criptografia AES-256-GCM
+│   ├── database/
+│   │   ├── connection_manager.go  # Conexoes dinamicas (Oracle, MySQL, Postgres)
+│   │   ├── postgres.go            # Cliente PostgreSQL (metadados)
+│   │   └── redis.go               # Cliente Redis (cache)
+│   ├── handlers/
+│   │   ├── connection.go          # Teste de conexao
+│   │   ├── dynamic_query.go       # Execucao de queries
+│   │   └── health.go              # Health check
+│   ├── middleware/                # Auth, CORS, Rate Limit, Security
+│   ├── models/                    # Structs de dados
+│   ├── repository/                # Acesso ao PostgreSQL
+│   └── services/                  # Cache service
+└── pkg/config/                    # Loader de configuracao
 ```
 
 ## Cache
 
-- Cada query pode ter TTL próprio (campo `cache_ttl`)
-- Cache key inclui parâmetros: `query:slug:param1=valor1:param2=valor2`
-- Cache hit/miss reportado no campo `meta.cache_hit`
+- TTL configuravel por query (campo `cache_ttl` no banco)
+- Fallback para TTL global do Redis quando nao definido
+- Cache key deterministica: `query:{slug}:{param1}={valor1}:{param2}={valor2}`
+- Status reportado no campo `meta.cache_hit` da resposta
 
-## Tipos de Parâmetros
+## Criptografia
+
+Senhas de datasources sao armazenadas encriptadas no PostgreSQL com AES-256-GCM. A mesma chave (`QUERYBASE_ENCRYPTION_KEY`) deve ser configurada no Laravel e na API Go.
+
+Se a chave nao estiver definida, a API continua funcionando (senhas sao usadas como estao no banco).
+
+## Seguranca
+
+| Recurso | Config |
+|---------|--------|
+| API Key Auth | `security.enable_auth` + `security.api_keys` |
+| Rate Limiting | `security.enable_rate_limit` + `security.requests_per_minute` |
+| CORS | `security.allowed_origins` |
+| Input Sanitization | Automatico (bloqueia SQL injection, XSS) |
+| Security Headers | Automatico (nosniff, DENY, XSS-Protection) |
+
+## Tipos de parametros
 
 | Tipo | Formato | Exemplo |
 |------|---------|---------|
-| `string` | Texto livre | `nome=João` |
-| `integer` | Número inteiro | `id=123` |
+| `string` | Texto livre | `nome=Joao` |
+| `integer` | Numero inteiro | `id=123` |
 | `number` | Decimal | `valor=99.90` |
 | `date` | YYYY-MM-DD | `data=2024-01-15` |
-| `datetime` | YYYY-MM-DD HH:MM:SS | `timestamp=2024-01-15 10:30:00` |
+| `datetime` | YYYY-MM-DD HH:MM:SS | `ts=2024-01-15 10:30:00` |
 | `boolean` | true/false | `ativo=true` |
 
-## Segurança
+## Banco de metadados (PostgreSQL)
 
-A API possui camadas de segurança configuráveis:
+| Tabela | Descricao |
+|--------|-----------|
+| `datasources` | Fontes de dados cadastradas |
+| `queries` | Queries SQL com slug, TTL, timeout |
+| `query_parameters` | Parametros tipados por query |
+| `query_executions` | Log de execucoes (duracao, cache hit, erros) |
 
-### API Key Authentication
-
-```yaml
-security:
-  enable_auth: true
-  api_keys:
-    - "sua-chave-secreta-1"
-    - "sua-chave-secreta-2"
-```
+## Build
 
 ```bash
-# Via header
-curl -H "X-API-Key: sua-chave-secreta-1" http://localhost:8080/api/queries
-
-# Via query param
-curl "http://localhost:8080/api/queries?api_key=sua-chave-secreta-1"
-```
-
-### Rate Limiting
-
-```yaml
-security:
-  enable_rate_limit: true
-  requests_per_minute: 60
-  burst_size: 10
-```
-
-### CORS
-
-```yaml
-security:
-  allowed_origins:
-    - "https://seu-frontend.com"
-    - "http://localhost:3000"
-```
-
-### Headers de Segurança
-
-Aplicados automaticamente em todas as respostas:
-- `X-Content-Type-Options: nosniff`
-- `X-Frame-Options: DENY`
-- `X-XSS-Protection: 1; mode=block`
-
-### Input Sanitization
-
-Proteção contra padrões maliciosos nos parâmetros de entrada.
-
-## Roadmap
-
-- [x] API básica com cache
-- [x] Queries dinâmicas do PostgreSQL
-- [x] Validação de parâmetros
-- [x] Log de execuções
-- [x] Autenticação (API keys)
-- [x] Rate limiting
-- [x] CORS configurável
-- [x] Headers de segurança
-- [ ] Interface admin (Laravel) (querybase-web)
-
-## Desenvolvimento
-
-```bash
-# Compilar
 go build -o querybase ./cmd/api/main.go
-
-# Rodar testes
-go test ./...
-
-# Verificar dependências
-go mod tidy
 ```
-<!-- 
-## Licença
-
-MIT -->
